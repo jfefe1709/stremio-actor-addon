@@ -13,8 +13,8 @@ const manifest = {
   types: ["movie", "series"],
   idPrefixes: ["tmdb"],
   catalogs: [
-    { type: "movie", id: "people-filmography", name: "Películas" },
-    { type: "series", id: "people-filmography", name: "Series" }
+    { type: "movie", id: "people-filmography", name: "Películas", extraSupported: ["search"] },
+    { type: "series", id: "people-filmography", name: "Series", extraSupported: ["search"] }
   ]
 };
 
@@ -31,18 +31,15 @@ async function tmdb(path, params = {}) {
 
 async function searchPerson(query) {
   const data = await tmdb("/search/person", { query });
-  const sorted = (data.results || []).sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
-  return sorted[0] || null;
+  return (data.results || []).sort((a, b) => (b.popularity || 0) - (a.popularity || 0))[0] || null;
 }
 
 async function getFilmography(personId) {
   const data = await tmdb(`/person/${personId}/combined_credits`);
-  const all = [...(data.cast || []), ...(data.crew || [])];
-
-  const movies = all.filter(c => c.media_type === "movie");
-  const tv = all.filter(c => c.media_type === "tv");
-
-  return { movies, tv };
+  return {
+    movies: (data.cast || []).filter(c => c.media_type === "movie"),
+    tv: (data.cast || []).filter(c => c.media_type === "tv")
+  };
 }
 
 function mapToMetaItem(type, item) {
@@ -86,7 +83,7 @@ async function getFullDetails(type, tmdbId) {
   };
 }
 
-/* ================= ENDPOINTS STREMIO ================= */
+/* ================= ENDPOINTS ================= */
 
 // manifest
 app.get("/manifest.json", (_req, res) => res.json(manifest));
@@ -95,7 +92,7 @@ app.get("/manifest.json", (_req, res) => res.json(manifest));
 app.get("/catalog/:type/:id", async (req, res) => {
   try {
     const { type } = req.params; // "movie" o "series"
-    const { search } = req.query;
+    const search = req.query.search;
     if (!search || !search.trim()) return res.json({ metas: [] });
 
     const person = await searchPerson(search.trim());
@@ -111,7 +108,7 @@ app.get("/catalog/:type/:id", async (req, res) => {
 
     res.json({ metas });
   } catch (err) {
-    console.error("CATALOG ERROR:", err?.response?.data || err.message);
+    console.error(err);
     res.json({ metas: [] });
   }
 });
@@ -120,35 +117,12 @@ app.get("/catalog/:type/:id", async (req, res) => {
 app.get("/meta/:type/:id", async (req, res) => {
   try {
     const { type } = req.params;
-    const rawId = req.params.id;
-    const parts = rawId.split(":");
-    const tmdbId = parts.length === 3 ? parts[2] : rawId;
-
+    const tmdbId = req.params.id.split(":")[2];
     const meta = await getFullDetails(type, tmdbId);
     res.json({ meta });
   } catch (err) {
-    console.error("META ERROR:", err?.response?.data || err.message);
+    console.error(err);
     res.json({ meta: {} });
-  }
-});
-
-// stream (trailer opcional)
-app.get("/stream/:type/:id", async (req, res) => {
-  try {
-    const { type } = req.params;
-    const rawId = req.params.id;
-    const parts = rawId.split(":");
-    const tmdbId = parts.length === 3 ? parts[2] : rawId;
-
-    const details = await getFullDetails(type, tmdbId);
-    const trailer = (details.videos || [])[0];
-    if (trailer) {
-      return res.json({ streams: [{ name: "Trailer", title: "Trailer (YouTube)", url: trailer.url }] });
-    }
-    res.json({ streams: [] });
-  } catch (err) {
-    console.error("STREAM ERROR:", err?.response?.data || err.message);
-    res.json({ streams: [] });
   }
 });
 
