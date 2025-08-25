@@ -4,11 +4,10 @@ const axios = require("axios");
 const TMDB_API_KEY = process.env.TMDB_API_KEY || "f4273ae35c295c6dd7cd5f05e4e535d8";
 const TMDB = "https://api.themoviedb.org/3";
 
-// Manifest
 const manifest = {
   id: "org.jfefe1709.actorfilmography",
   name: "Filmografía por Persona",
-  version: "1.0.0",
+  version: "1.1.0",
   description: "Filtrando catálogo oficial de TMDb por actor/director, separado en Películas y Series, ordenado por puntuación.",
   resources: ["catalog"],
   types: ["movie", "series"],
@@ -42,7 +41,6 @@ async function getFilmography(personId) {
   };
 }
 
-// Map to catalog item
 function mapToMetaItem(type, item) {
   return {
     id: `tmdb:${type}:${item.id}`,
@@ -59,10 +57,10 @@ app.get("/catalog/:type/:id", async (req, res) => {
   try {
     const { type } = req.params;
     const search = req.query.search;
-    if (!search || !search.trim()) return res.json({ metas: [] });
+    if (!search || !search.trim()) return res.json({ metas: [], name: "" });
 
     const person = await searchPerson(search.trim());
-    if (!person) return res.json({ metas: [] });
+    if (!person) return res.json({ metas: [], name: "" });
 
     const { movies, tv } = await getFilmography(person.id);
 
@@ -72,14 +70,18 @@ app.get("/catalog/:type/:id", async (req, res) => {
 
     const metas = pool.map(item => mapToMetaItem(type, item));
 
-    res.json({ metas });
+    // Cambiamos el título del catálogo según el actor/director
+    const catalogName = type === "movie"
+      ? `Películas de ${person.name}`
+      : `Series de ${person.name}`;
+
+    res.json({ metas, name: catalogName });
   } catch (err) {
     console.error(err);
-    res.json({ metas: [] });
+    res.json({ metas: [], name: "" });
   }
 });
 
-// Ping
 app.get("/", (_req, res) => res.send("OK"));
 
 const PORT = process.env.PORT || 7000;
