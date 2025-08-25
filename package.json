@@ -1,13 +1,13 @@
 {
-  "name": "stremio-actor-director-addon",
+  "name": "stremio-actor-director-addon-render",
   "version": "1.0.0",
-  "description": "Addon Stremio que muestra películas y series de actores o directores en español",
+  "description": "Addon Stremio para mostrar películas y series de actores o directores, listo para Render",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "stremio-addon-sdk": "^0.5.5",
-    "axios": "^1.6.0"
+    "axios": "^1.6.0",
+    "express": "^4.18.2"
   }
 }

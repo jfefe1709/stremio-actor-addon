@@ -2,11 +2,11 @@ const express = require("express");
 const axios = require("axios");
 
 const app = express();
-const PORT = process.env.PORT || 7000;
+const PORT = process.env.PORT || 7000;  // Render asigna el puerto automáticamente
 const TMDB_API_KEY = "f4273ae35c295c6dd7cd5f05e4e535d8";
 
 const manifest = {
-  id: "org.example.actorserieshttp",
+  id: "org.example.actorseriesrender",
   version: "1.0.0",
   name: "Películas y Series por Actor/Director",
   description: "Muestra películas y series de actores o directores con títulos completos y puntuación IMDb",
@@ -18,12 +18,12 @@ const manifest = {
   ]
 };
 
-// Manifest
+// Endpoint del manifest
 app.get("/manifest.json", (req, res) => {
   res.json(manifest);
 });
 
-// Catalogos
+// Endpoint de catálogo
 app.get("/catalog/:type/:query", async (req,res)=>{
   const { type, query } = req.params;
   if (!query) return res.json({ metas: [] });
@@ -77,4 +77,5 @@ app.get("/catalog/:type/:query", async (req,res)=>{
   }
 });
 
-app.listen(PORT, ()=>console.log(`Addon ejecutándose en http://localhost:${PORT}`));
+// Escucha en todas las interfaces (0.0.0.0) para Render
+app.listen(PORT, '0.0.0.0', ()=>console.log(`Addon ejecutándose en Render en el puerto ${PORT}`));
