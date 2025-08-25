@@ -1,20 +1,13 @@
 {
   "name": "stremio-actor-addon",
   "version": "1.0.0",
-  "description": "Addon de Stremio: filmografía por actor/director, separada en películas y series, ordenada por puntuación.",
+  "description": "Addon de Stremio: filtra el catálogo oficial de TMDb por actor/director, separado en Películas y Series.",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
-    "dev": "nodemon index.js"
+    "start": "node index.js"
   },
-  "keywords": ["stremio", "addon", "actor", "director", "movies", "series", "filmography"],
-  "author": "Javier Feijoo",
-  "license": "MIT",
   "dependencies": {
     "axios": "^1.7.2",
     "express": "^4.19.2"
-  },
-  "devDependencies": {
-    "nodemon": "^3.0.2"
   }
 }
