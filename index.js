@@ -1,88 +1,80 @@
 const express = require("express");
 const axios = require("axios");
 
-const TMDB_API_KEY = process.env.TMDB_API_KEY || "f4273ae35c295c6dd7cd5f05e4e535d8";
-const TMDB = "https://api.themoviedb.org/3";
+const app = express();
+const PORT = process.env.PORT || 7000;
+const TMDB_API_KEY = "f4273ae35c295c6dd7cd5f05e4e535d8";
 
 const manifest = {
-  id: "org.jfefe1709.actorfilmography",
-  name: "Filmografía por Persona",
-  version: "1.1.0",
-  description: "Filtrando catálogo oficial de TMDb por actor/director, separado en Películas y Series, ordenado por puntuación.",
+  id: "org.example.actorserieshttp",
+  version: "1.0.0",
+  name: "Películas y Series por Actor/Director",
+  description: "Muestra películas y series de actores o directores con títulos completos y puntuación IMDb",
   resources: ["catalog"],
-  types: ["movie", "series"],
-  idPrefixes: ["tmdb"],
+  types: ["movie","series"],
   catalogs: [
-    { type: "movie", id: "people-filter-movies", name: "Películas", extraSupported: ["search"] },
-    { type: "series", id: "people-filter-series", name: "Series", extraSupported: ["search"] }
+    { type: "movie", id: "actor-catalog", name: "Buscar Películas por Actor/Director" },
+    { type: "series", id: "actor-catalog-series", name: "Buscar Series por Actor/Director" }
   ]
 };
 
-const app = express();
+// Manifest
+app.get("/manifest.json", (req, res) => {
+  res.json(manifest);
+});
 
-// Helpers
-async function tmdb(path, params = {}) {
-  const { data } = await axios.get(`${TMDB}${path}`, {
-    params: { api_key: TMDB_API_KEY, language: "es-ES", ...params }
-  });
-  return data;
-}
+// Catalogos
+app.get("/catalog/:type/:query", async (req,res)=>{
+  const { type, query } = req.params;
+  if (!query) return res.json({ metas: [] });
 
-async function searchPerson(query) {
-  const data = await tmdb("/search/person", { query });
-  return (data.results || []).sort((a, b) => (b.popularity || 0) - (a.popularity || 0))[0] || null;
-}
-
-async function getFilmography(personId) {
-  const data = await tmdb(`/person/${personId}/combined_credits`);
-  return {
-    movies: (data.cast || []).filter(c => c.media_type === "movie"),
-    tv: (data.cast || []).filter(c => c.media_type === "tv")
-  };
-}
-
-function mapToMetaItem(type, item) {
-  return {
-    id: `tmdb:${type}:${item.id}`,
-    type,
-    name: item.title || item.name,
-    score: item.vote_average,
-  };
-}
-
-// Endpoints
-app.get("/manifest.json", (_req, res) => res.json(manifest));
-
-app.get("/catalog/:type/:id", async (req, res) => {
   try {
-    const { type } = req.params;
-    const search = req.query.search;
-    if (!search || !search.trim()) return res.json({ metas: [], name: "" });
+    // Buscar personas en TMDb
+    const peopleRes = await axios.get("https://api.themoviedb.org/3/search/person", {
+      params: { api_key: TMDB_API_KEY, query, language: "es-ES" }
+    });
 
-    const person = await searchPerson(search.trim());
-    if (!person) return res.json({ metas: [], name: "" });
+    const people = peopleRes.data.results.sort((a,b)=> b.known_for.length - a.known_for.length);
+    const metas = [];
 
-    const { movies, tv } = await getFilmography(person.id);
+    for (const person of people) {
+      const movies = person.known_for.filter(i=>i.media_type==="movie").sort((a,b)=>b.vote_average - a.vote_average);
+      const series = person.known_for.filter(i=>i.media_type==="tv").sort((a,b)=>b.vote_average - a.vote_average);
 
-    let pool = [];
-    if (type === "movie") pool = movies.sort((a, b) => b.vote_average - a.vote_average);
-    if (type === "series") pool = tv.sort((a, b) => b.vote_average - a.vote_average);
+      if (type==="movie" && movies.length>0) {
+        metas.push({
+          id: `movies-${person.id}`,
+          type: "movie",
+          name: `Películas - ${person.name}`,
+          items: movies.map(m=>({
+            id: `tmdb-${m.id}`,
+            name: m.title,
+            poster: m.poster_path?`https://image.tmdb.org/t/p/w500${m.poster_path}`:"",
+            imdbRating: m.vote_average
+          }))
+        });
+      }
 
-    const metas = pool.map(item => mapToMetaItem(type, item));
+      if (type==="series" && series.length>0) {
+        metas.push({
+          id: `series-${person.id}`,
+          type: "series",
+          name: `Series - ${person.name}`,
+          items: series.map(s=>({
+            id: `tmdb-${s.id}`,
+            name: s.name,
+            poster: s.poster_path?`https://image.tmdb.org/t/p/w500${s.poster_path}`:"",
+            imdbRating: s.vote_average
+          }))
+        });
+      }
+    }
 
-    // Cambiamos el título del catálogo según el actor/director
-    const catalogName = type === "movie"
-      ? `Películas de ${person.name}`
-      : `Series de ${person.name}`;
-
-    res.json({ metas, name: catalogName });
-  } catch (err) {
+    res.json({ metas });
+  } catch(err){
     console.error(err);
-    res.json({ metas: [], name: "" });
+    res.json({ metas: [] });
   }
 });
 
-app.get("/", (_req, res) => res.send("OK"));
-
-const PORT = process.env.PORT || 7000;
-app.listen(PORT, () => console.log(`Addon listo en :${PORT}`));
+app.listen(PORT, ()=>console.log(`Addon ejecutándose en http://localhost:${PORT}`));
