@@ -1,7 +1,7 @@
 {
-  "name": "stremio-actor-director-addon-render",
+  "name": "stremio-actor-wrapper",
   "version": "1.0.0",
-  "description": "Addon Stremio para mostrar películas y series de actores o directores, listo para Render",
+  "description": "Addon Stremio que filtra películas y series por actor/director usando el addon oficial de TMDb",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
