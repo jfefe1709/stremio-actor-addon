@@ -1,152 +1,159 @@
-const { addonBuilder } = require("stremio-addon-sdk");
 const express = require("express");
 const axios = require("axios");
 
-const TMDB_API_KEY = "f4273ae35c295c6dd7cd5f05e4e535d8";
-const TMDB_BASE = "https://api.themoviedb.org/3";
+const TMDB_API_KEY = process.env.TMDB_API_KEY || "f4273ae35c295c6dd7cd5f05e4e535d8";
+const TMDB = "https://api.themoviedb.org/3";
 
 const manifest = {
-    id: "org.javier.actorfilms",
-    name: "Actor & Director Filmography",
-    description: "Busca películas y series de cualquier actor o director, ordenadas por puntuación.",
-    version: "1.0.0",
-    resources: ["catalog", "meta", "stream"],
-    types: ["movie", "series"],
-    idPrefixes: ["movie", "series"],
-    catalogs: [
-        {
-            type: "movie",
-            id: "actor-director-catalog",
-            name: "Búsqueda de Actores/Directores"
-        }
-    ]
+  id: "org.jfefe1709.actorfilmography",
+  name: "Filmografía por Persona",
+  version: "1.0.0",
+  description: "Busca un actor o director y muestra su filmografía separada en Películas y Series, ordenadas por puntuación.",
+  resources: ["catalog", "meta", "stream"],
+  types: ["movie", "series"],
+  idPrefixes: ["tmdb"],
+  catalogs: [
+    { type: "movie", id: "people-filmography", name: "Películas" },
+    { type: "series", id: "people-filmography", name: "Series" }
+  ]
 };
 
-const builder = new addonBuilder(manifest);
+const app = express();
 
-// ---------- Helpers ----------
-async function searchPerson(name) {
-    const resp = await axios.get(`${TMDB_BASE}/search/person`, {
-        params: { api_key: TMDB_API_KEY, query: name }
-    });
-    return resp.data.results;
+/* ================= HELPERS ================= */
+
+async function tmdb(path, params = {}) {
+  const { data } = await axios.get(`${TMDB}${path}`, {
+    params: { api_key: TMDB_API_KEY, language: "es-ES", ...params }
+  });
+  return data;
+}
+
+async function searchPerson(query) {
+  const data = await tmdb("/search/person", { query });
+  const sorted = (data.results || []).sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
+  return sorted[0] || null;
 }
 
 async function getFilmography(personId) {
-    const resp = await axios.get(`${TMDB_BASE}/person/${personId}/combined_credits`, {
-        params: { api_key: TMDB_API_KEY }
-    });
-    const credits = resp.data;
+  const data = await tmdb(`/person/${personId}/combined_credits`);
+  const all = [...(data.cast || []), ...(data.crew || [])];
 
-    const movies = credits.cast.concat(credits.crew)
-        .filter(c => c.media_type === "movie")
-        .map(c => ({ id: c.id, type: "movie" }));
+  const movies = all.filter(c => c.media_type === "movie");
+  const tv = all.filter(c => c.media_type === "tv");
 
-    const series = credits.cast.concat(credits.crew)
-        .filter(c => c.media_type === "tv")
-        .map(c => ({ id: c.id, type: "tv" }));
-
-    return { movies, series };
+  return { movies, tv };
 }
 
-async function getItemDetails(type, id) {
-    const resp = await axios.get(`${TMDB_BASE}/${type}/${id}`, {
-        params: { api_key: TMDB_API_KEY, append_to_response: "videos" }
-    });
-    const data = resp.data;
+function mapToMetaItem(type, item) {
+  const title = item.title || item.name || "Sin nombre";
+  const year = (item.release_date || item.first_air_date || "").slice(0, 4);
+  const poster = item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : null;
+  const score = typeof item.vote_average === "number" ? item.vote_average : 0;
 
-    const trailer = data.videos?.results?.find(v => v.type === "Trailer" && v.site === "YouTube");
-
-    return {
-        id: `${type}:${id}`,
-        type: type === "movie" ? "movie" : "series",
-        name: data.title || data.name,
-        description: data.overview || "Sin descripción",
-        poster: data.poster_path ? `https://image.tmdb.org/t/p/w500${data.poster_path}` : "",
-        year: (data.release_date || data.first_air_date || "").split("-")[0] || "",
-        genres: data.genres ? data.genres.map(g => g.name).join(", ") : "",
-        score: data.vote_average || 0,
-        trailer: trailer ? `https://www.youtube.com/watch?v=${trailer.key}` : ""
-    };
+  return {
+    id: `tmdb:${type}:${item.id}`,
+    type,
+    name: title,
+    poster,
+    posterShape: "poster",
+    description: year || "Sin año",
+    score
+  };
 }
 
-// ---------- Catalog ----------
-async function catalogHandler(req, res) {
-    const search = req.query.search;
-    if (!search) return res.json({ metas: [] });
+async function getFullDetails(type, tmdbId) {
+  const path = type === "movie" ? `/movie/${tmdbId}` : `/tv/${tmdbId}`;
+  const data = await tmdb(path, { append_to_response: "videos" });
 
-    const persons = await searchPerson(search);
-    if (!persons.length) return res.json({ metas: [] });
+  const name = data.title || data.name || "Sin nombre";
+  const year = (data.release_date || data.first_air_date || "").slice(0, 4);
+  const poster = data.poster_path ? `https://image.tmdb.org/t/p/w500${data.poster_path}` : null;
+  const background = data.backdrop_path ? `https://image.tmdb.org/t/p/w1280${data.backdrop_path}` : null;
+  const trailer = (data.videos?.results || []).find(v => v.site === "YouTube" && v.type === "Trailer");
 
-    const personId = persons[0].id;
-    const filmography = await getFilmography(personId);
+  return {
+    id: `tmdb:${type}:${tmdbId}`,
+    type,
+    name,
+    releaseInfo: year || "",
+    description: data.overview || "Sin descripción",
+    poster,
+    background,
+    genres: (data.genres || []).map(g => g.name),
+    videos: trailer ? [{ id: `yt:${trailer.key}`, title: "Trailer", url: `https://www.youtube.com/watch?v=${trailer.key}` }] : [],
+    imdbRating: typeof data.vote_average === "number" ? data.vote_average.toFixed(1) : undefined
+  };
+}
 
-    const movieDetails = await Promise.all(filmography.movies.map(m => getItemDetails("movie", m.id)));
-    const seriesDetails = await Promise.all(filmography.series.map(s => getItemDetails("tv", s.id)));
+/* ================= ENDPOINTS STREMIO ================= */
 
-    movieDetails.sort((a, b) => b.score - a.score);
-    seriesDetails.sort((a, b) => b.score - a.score);
+// manifest
+app.get("/manifest.json", (_req, res) => res.json(manifest));
 
-    const metas = [];
+// catalog
+app.get("/catalog/:type/:id", async (req, res) => {
+  try {
+    const { type } = req.params; // "movie" o "series"
+    const { search } = req.query;
+    if (!search || !search.trim()) return res.json({ metas: [] });
 
-    if (movieDetails.length) {
-        metas.push({
-            id: `tab:movies`,
-            type: "movie",
-            name: "Películas",
-            poster: "",
-            description: "",
-            extra: { items: movieDetails }
-        });
-    }
+    const person = await searchPerson(search.trim());
+    if (!person) return res.json({ metas: [] });
 
-    if (seriesDetails.length) {
-        metas.push({
-            id: `tab:series`,
-            type: "series",
-            name: "Series",
-            poster: "",
-            description: "",
-            extra: { items: seriesDetails }
-        });
-    }
+    const { movies, tv } = await getFilmography(person.id);
+    const pool = type === "movie" ? movies : tv;
+
+    const metas = pool
+      .map(item => mapToMetaItem(type, item))
+      .sort((a, b) => (b.score || 0) - (a.score || 0))
+      .slice(0, 100);
 
     res.json({ metas });
-}
+  } catch (err) {
+    console.error("CATALOG ERROR:", err?.response?.data || err.message);
+    res.json({ metas: [] });
+  }
+});
 
-// ---------- Meta ----------
-async function metaHandler(req, res) {
-    const [type, itemId] = req.params.id.split(":");
-    const details = await getItemDetails(type, itemId);
-    res.json([details]);
-}
+// meta
+app.get("/meta/:type/:id", async (req, res) => {
+  try {
+    const { type } = req.params;
+    const rawId = req.params.id;
+    const parts = rawId.split(":");
+    const tmdbId = parts.length === 3 ? parts[2] : rawId;
 
-// ---------- Stream ----------
-async function streamHandler(req, res) {
-    const [type, itemId] = req.params.id.split(":");
-    const details = await getItemDetails(type, itemId);
+    const meta = await getFullDetails(type, tmdbId);
+    res.json({ meta });
+  } catch (err) {
+    console.error("META ERROR:", err?.response?.data || err.message);
+    res.json({ meta: {} });
+  }
+});
 
-    if (details.trailer) {
-        res.json({
-            streams: [
-                {
-                    title: "Trailer oficial",
-                    url: details.trailer,
-                    type: "trailer"
-                }
-            ]
-        });
-    } else {
-        res.json({ streams: [] });
+// stream (trailer opcional)
+app.get("/stream/:type/:id", async (req, res) => {
+  try {
+    const { type } = req.params;
+    const rawId = req.params.id;
+    const parts = rawId.split(":");
+    const tmdbId = parts.length === 3 ? parts[2] : rawId;
+
+    const details = await getFullDetails(type, tmdbId);
+    const trailer = (details.videos || [])[0];
+    if (trailer) {
+      return res.json({ streams: [{ name: "Trailer", title: "Trailer (YouTube)", url: trailer.url }] });
     }
-}
+    res.json({ streams: [] });
+  } catch (err) {
+    console.error("STREAM ERROR:", err?.response?.data || err.message);
+    res.json({ streams: [] });
+  }
+});
 
-// ---------- Servidor ----------
-const app = express();
-app.use("/manifest.json", (req, res) => res.json(manifest));
-app.use("/catalog/:id", catalogHandler);
-app.use("/meta/:id", metaHandler);
-app.use("/stream/:type/:id", streamHandler);
+// ping
+app.get("/", (_req, res) => res.send("OK"));
 
 const PORT = process.env.PORT || 7000;
-app.listen(PORT, () => console.log(`Addon corriendo en puerto ${PORT}`));
+app.listen(PORT, () => console.log(`Addon listo en :${PORT}`));

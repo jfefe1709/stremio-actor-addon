@@ -1,13 +1,20 @@
 {
   "name": "stremio-actor-addon",
   "version": "1.0.0",
+  "description": "Addon de Stremio: filmografía por actor/director, separada en películas y series, ordenada por puntuación.",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "dev": "nodemon index.js"
   },
+  "keywords": ["stremio", "addon", "actor", "director", "movies", "series", "filmography"],
+  "author": "Javier Feijoo",
+  "license": "MIT",
   "dependencies": {
-    "axios": "^1.6.0",
-    "express": "^4.18.2",
-    "stremio-addon-sdk": "^1.0.0"
+    "axios": "^1.7.2",
+    "express": "^4.19.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
   }
 }
